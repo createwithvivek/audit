@@ -1,133 +1,81 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import openai
 import pandas as pd
 import io
-import os
+import base64
+from PIL import Image
 import requests
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-
-# Load OpenAI API key securely from environment variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
-
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 app = FastAPI()
 
-# CORS settings
-origins = [
-    "https://analysisdata.netlify.app",
-    "https://your-frontend-url.com",
-    "http://localhost",
-    "http://127.0.0.1:8000",
-]
+# Set your OpenAI API key here
+openai.api_key = "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"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def audit_expenses_with_gpt4(csv_data: str, image_data: list) -> str:
+    """
+    Sends the CSV data and images to GPT-4 for auditing.
+    """
+    # Prepare the prompt for GPT-4
+    prompt = (
+        "You are a financial auditor. Below is a CSV file containing financing expenses and bills, "
+        "along with images of the bills. Please audit the data and images, provide a score out of 10, "
+        "and highlight any financial mistakes or discrepancies.\n\n"
+        f"CSV Data:\n{csv_data}\n\n"
+        "Images of Bills: (attached as base64 encoded images)\n"
+    )
 
-async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
-    try:
-        # Read CSV file
-        csv_contents = await audit_csv.read()
-        try:
-            df = pd.read_csv(io.BytesIO(csv_contents))
-        except Exception as e:
-            logging.error(f"❌ Invalid CSV file: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
+    # Add image data to the prompt (base64 encoded)
+    for idx, img_base64 in enumerate(image_data):
+        prompt += f"Image {idx + 1}: {img_base64[:100]}... (truncated)\n"
 
-        # Get filenames of uploaded bill images
-        bill_filenames = [bill.filename for bill in bills] if bills else ["No bills uploaded"]
+    # Send the prompt to GPT-4
+    response = openai.ChatCompletion.create(
+        model="gpt-4",  # Use GPT-4
+        messages=[
+            {"role": "system", "content": "You are a financial auditor."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=1000,
+    )
 
-        # Format CSV as text for OpenAI
-        csv_text = df.to_string()
+    return response.choices[0].message["content"].strip()
 
-        # Construct GPT-4o-mini prompt
-        prompt = f"""
-        You are a financial auditor. Your job is to verify transactions in the audit file against the provided bills.
+def encode_image_to_base64(image: UploadFile) -> str:
+    """
+    Encodes an uploaded image file to base64.
+    """
+    image_bytes = image.file.read()
+    return base64.b64encode(image_bytes).decode("utf-8")
 
-        **Instructions:**
-        - Verify each transaction in the CSV file with the provided bills.
-        - Identify missing or inconsistent bills.
-        - Detect fraud, fake invoices, or altered documents.
-        - Cross-check transaction details.
-        - Provide an **Audit Score (0-100%)** based on completeness and legitimacy.
-        - Provide structured **point-to-point analysis**.
+@app.post("/audit-expenses/")
+async def audit_expenses(
+    csv_file: UploadFile = File(...),
+    bill_images: list[UploadFile] = File(...),
+):
+    """
+    Endpoint to upload a CSV file and images of bills for auditing.
+    """
+    # Validate file formats
+    if not csv_file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Invalid CSV file format.")
 
-        **Audit Transactions (CSV Data):**
-        {csv_text}
+    for image in bill_images:
+        if not image.filename.lower().endswith((".png", ".jpg", ".jpeg")):
+            raise HTTPException(status_code=400, detail="Invalid image format. Only PNG, JPG, and JPEG are allowed.")
 
-        **Bill Images Provided:** {', '.join(bill_filenames)}
+    # Read the CSV file
+    csv_contents = await csv_file.read()
+    df = pd.read_csv(io.StringIO(csv_contents.decode("utf-8")))
+    csv_data = df.to_string(index=False)
 
-        Analyze the transactions based on the bill images and return a structured JSON output with:
-        - **Audit Score (0-100%)**
-        - **Transactions with missing or inconsistent bills**
-        - **Suspicious or fraudulent bills**
-        - **Point-to-point analysis of inconsistencies**
-        - **Final Recommendations**
-        """
+    # Encode images to base64
+    image_data = [encode_image_to_base64(image) for image in bill_images]
 
-        # Prepare API request
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {"role": "system", "content": "You are an expert financial auditor."},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 2000
-        }
+    # Audit the expenses and bills using GPT-4
+    audit_result = audit_expenses_with_gpt4(csv_data, image_data)
 
-        logging.info("📡 Sending request to OpenAI API...")
-        
-        # Send request to OpenAI API
-        response = requests.post(OPENAI_API_URL, json=payload, headers=headers)
+    return {"audit_result": audit_result}
 
-        # Log API response status
-        logging.info(f"🔍 OpenAI API Response Status: {response.status_code}")
-
-        # Check for API errors
-        if response.status_code != 200:
-            logging.error(f"❌ OpenAI API Error: {response.text}")
-            raise HTTPException(status_code=500, detail=f"OpenAI API Error: {response.text}")
-
-        data = response.json()
-        logging.info("✅ Successfully received response from OpenAI API")
-
-        # Extract response content
-        try:
-            audit_result = data["choices"][0]["message"]["content"]
-            request_id = data.get("id", "N/A")  # Get request ID if available
-        except (KeyError, IndexError):
-            logging.error(f"❌ Unexpected OpenAI API Response: {data}")
-            raise HTTPException(status_code=500, detail=f"Unexpected response from OpenAI API: {data}")
-
-        return {
-            "Audit Report": audit_result,
-            "Request ID": request_id  # OpenAI Request ID for tracking
-        }
-
-    except Exception as e:
-        logging.error(f"❌ Unexpected server error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Unexpected server error: {str(e)}")
-
-@app.get("/")
-async def home():
-    return {"message": "FastAPI is running successfully!"}
-
-@app.post("/upload-audit/")
-async def upload_audit(audit_csv: UploadFile = File(...), bills: list[UploadFile] = File([])):
-    result = await analyze_audit(audit_csv, bills)
-    return {"message": "Audit Completed", "Report": result}
+if name == "main":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
