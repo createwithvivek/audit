@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI()
 
 # Instantiate the OpenAI client with your API key.
-client = OpenAI(api_key="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")
+client = OpenAI(api_key="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")
 
 
 def get_audit_completion(prompt: str) -> dict:
