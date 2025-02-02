@@ -4,3 +4,4 @@ openai==1.10.0
 pandas==2.2.0
 python-multipart==0.0.9
 requests
+pillow
