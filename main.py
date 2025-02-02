@@ -4,14 +4,17 @@ import pandas as pd
 import io
 import os
 import requests
-import base64
+import logging
 
-# Load OpenAI API key securely from environment variables (DO NOT HARDCODE)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+# Load OpenAI API key securely from environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
 
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"  # OpenAI Chat API endpoint
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 app = FastAPI()
 
@@ -32,83 +35,93 @@ app.add_middleware(
 )
 
 async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
-    # Read CSV file asynchronously
-    csv_contents = await audit_csv.read()
     try:
-        df = pd.read_csv(io.BytesIO(csv_contents))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
+        # Read CSV file
+        csv_contents = await audit_csv.read()
+        try:
+            df = pd.read_csv(io.BytesIO(csv_contents))
+        except Exception as e:
+            logging.error(f"❌ Invalid CSV file: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
 
-    # Read bill images asynchronously and convert them to Base64
-    bill_images = {}
-    for bill in bills:
-        bill_contents = await bill.read()
-        bill_base64 = base64.b64encode(bill_contents).decode("utf-8")  # Convert to Base64
-        bill_images[bill.filename] = bill_base64
+        # Get filenames of uploaded bill images
+        bill_filenames = [bill.filename for bill in bills] if bills else ["No bills uploaded"]
 
-    # Format CSV as text for OpenAI
-    csv_text = df.to_string()
+        # Format CSV as text for OpenAI
+        csv_text = df.to_string()
 
-    # Construct GPT-4o-mini prompt
-    prompt = f"""
-    You are a financial auditor. Your job is to verify transactions in the audit file against the provided bill images.
+        # Construct GPT-4o-mini prompt
+        prompt = f"""
+        You are a financial auditor. Your job is to verify transactions in the audit file against the provided bills.
 
-    **Instructions:**
-    - Verify each transaction in the CSV file with the provided bills.
-    - Identify missing or inconsistent bills.
-    - Detect fraud, fake invoices, or altered documents.
-    - Cross-check transaction details.
-    - Provide an **Audit Score (0-100%)** based on completeness and legitimacy.
-    - Provide structured **point-to-point analysis**.
+        **Instructions:**
+        - Verify each transaction in the CSV file with the provided bills.
+        - Identify missing or inconsistent bills.
+        - Detect fraud, fake invoices, or altered documents.
+        - Cross-check transaction details.
+        - Provide an **Audit Score (0-100%)** based on completeness and legitimacy.
+        - Provide structured **point-to-point analysis**.
 
-    **Audit Transactions (CSV Data):**
-    {csv_text}
+        **Audit Transactions (CSV Data):**
+        {csv_text}
 
-    **Bill Images (Base64 Encoded):**
-    {', '.join(bill_images.keys()) if bill_images else "No bills uploaded"}
+        **Bill Images Provided:** {', '.join(bill_filenames)}
 
-    Analyze the transactions based on the bill images and return a structured JSON output with:
-    - **Audit Score (0-100%)**
-    - **Transactions with missing or inconsistent bills**
-    - **Suspicious or fraudulent bills**
-    - **Point-to-point analysis of inconsistencies**
-    - **Final Recommendations**
-    """
+        Analyze the transactions based on the bill images and return a structured JSON output with:
+        - **Audit Score (0-100%)**
+        - **Transactions with missing or inconsistent bills**
+        - **Suspicious or fraudulent bills**
+        - **Point-to-point analysis of inconsistencies**
+        - **Final Recommendations**
+        """
 
-    # Prepare API request
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are an expert financial auditor."},
-            {"role": "user", "content": prompt},
-        ],
-        "max_tokens": 2000
-    }
+        # Prepare API request
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "You are an expert financial auditor."},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": 2000
+        }
 
-    # Send request to OpenAI API
-    try:
+        logging.info("📡 Sending request to OpenAI API...")
+        
+        # Send request to OpenAI API
         response = requests.post(OPENAI_API_URL, json=payload, headers=headers)
-        response.raise_for_status()  # Raise an error for bad status codes
+
+        # Log API response status
+        logging.info(f"🔍 OpenAI API Response Status: {response.status_code}")
+
+        # Check for API errors
+        if response.status_code != 200:
+            logging.error(f"❌ OpenAI API Error: {response.text}")
+            raise HTTPException(status_code=500, detail=f"OpenAI API Error: {response.text}")
+
         data = response.json()
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Error connecting to OpenAI API: {str(e)}")
+        logging.info("✅ Successfully received response from OpenAI API")
 
-    # Extract response content
-    try:
-        audit_result = data["choices"][0]["message"]["content"]
-        request_id = data.get("id", "N/A")  # Get request ID if available
-    except (KeyError, IndexError):
-        raise HTTPException(status_code=500, detail="Invalid response from OpenAI API")
+        # Extract response content
+        try:
+            audit_result = data["choices"][0]["message"]["content"]
+            request_id = data.get("id", "N/A")  # Get request ID if available
+        except (KeyError, IndexError):
+            logging.error(f"❌ Unexpected OpenAI API Response: {data}")
+            raise HTTPException(status_code=500, detail=f"Unexpected response from OpenAI API: {data}")
 
-    return {
-        "Audit Report": audit_result,
-        "Request ID": request_id  # OpenAI Request ID for tracking
-    }
+        return {
+            "Audit Report": audit_result,
+            "Request ID": request_id  # OpenAI Request ID for tracking
+        }
+
+    except Exception as e:
+        logging.error(f"❌ Unexpected server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected server error: {str(e)}")
 
 @app.get("/")
 async def home():
