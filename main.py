@@ -10,6 +10,7 @@ openai.api_key = "sk-proj-YuP8fK__Pb5dewCVPIbTafkXr35Zldq038x_N03buKfgHD3Ags1Xyu
 
 # CORS settings (Add your allowed origins here)
 origins = [
+    "analysisdata.netlify.app",
     "https://da93a30c-86aa-42bd-af64-68a8b5ce16e5.lovableproject.c",  # Frontend URL
     "http://localhost",  # For local development
     "http://127.0.0.1:8000",  # Localhost address for FastAPI server
