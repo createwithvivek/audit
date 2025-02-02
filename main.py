@@ -5,6 +5,7 @@ import base64
 import asyncio
 import logging
 from openai import OpenAI  # Using the new import style
+import os 
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI()
 
 # Instantiate the OpenAI client with your API key.
-client = OpenAI(api_key="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")
+client = OpenAI(os.environ["OPENAI_API_KEY"])
 
 
 def get_audit_completion(prompt: str) -> dict:
