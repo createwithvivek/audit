@@ -47,7 +47,7 @@ def encode_image_to_base64(image: UploadFile) -> str:
     image_bytes = image.file.read()
     return base64.b64encode(image_bytes).decode("utf-8")
 
-@app.post("/audit-expenses/")
+@app.post("/upload-audit/")
 async def audit_expenses(
     csv_file: UploadFile = File(...),
     bill_images: list[UploadFile] = File(...),
