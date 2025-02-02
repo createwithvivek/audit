@@ -6,12 +6,12 @@ import pandas as pd
 import io
 import os
 
-# Load OpenAI API key securely (DO NOT HARDCODE)
+# Load OpenAI API key securely from environment variables (DO NOT HARDCODE)
 OPENAI_API_KEY = "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"
 if not OPENAI_API_KEY:
     raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
 
-client = openai.OpenAI()
+openai.api_key = OPENAI_API_KEY
 
 app = FastAPI()
 
@@ -74,17 +74,18 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     - **Final Recommendations**
     """
 
-    response = client.chat.completions.create(
-     model="gpt-4",
-     messages=[
-        {"role": "system", "content": "You are an expert financial auditor."},
-        {"role": "user", "content": prompt},
-      ],
-     max_tokens=2000,
-     )
+    # OpenAI Chat Completion (Correct API Call)
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are an expert financial auditor."},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=2000,
+    )
 
     # Extract response
-    audit_result = response.choices[0].message.content
+    audit_result = response["choices"][0]["message"]["content"]
     return {"Audit Report": audit_result}
 
 @app.get("/")
