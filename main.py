@@ -10,7 +10,7 @@ OPENAI_API_KEY = "sk-proj-YuP8fK__Pb5dewCVPIbTafkXr35Zldq038x_N03buKfgHD3Ags1Xyu
 if not OPENAI_API_KEY:
     raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI()
 
 app = FastAPI()
 
