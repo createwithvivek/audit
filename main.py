@@ -6,7 +6,7 @@ import io
 app = FastAPI()
 
 # Set OpenAI API Key
-openai.api_key = "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"
+openai.api_key = "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"  # Replace with your OpenAI API key
 
 # CORS settings (Add your allowed origins here)
 origins = [
@@ -56,21 +56,22 @@ def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     - **Final Recommendations**
     """
 
-    # Attach CSV and bill files
+    # Prepare the files for sending (audit_csv + bills)
     files = {
         "audit_csv": ("audit.csv", csv_contents, "text/csv"),
     }
     for filename, content in bill_files.items():
         files[filename] = (filename, content, "application/octet-stream")
 
-    # Send request to OpenAI ChatGPT API
-    response = openai.ChatCompletion.create(
-        model="gpt-4-vision-preview",  # Use the appropriate model
-        messages=[{"role": "system", "content": prompt}],
-        files=list(files.values()),  # Attach files
+    # OpenAI Chat Completion with the updated API
+    response = openai.Completion.create(
+        model="gpt-4",  # Update the model to GPT-4 or another version as required
+        prompt=prompt,
+        max_tokens=1500,  # Adjust as necessary
     )
 
-    return response["choices"][0]["message"]["content"]
+    # Return the response content
+    return response["choices"][0]["text"]
 
 @app.get("/")
 async def home():
