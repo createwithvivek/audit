@@ -11,7 +11,7 @@ OPENAI_API_KEY = "sk-proj-YuP8fK__Pb5dewCVPIbTafkXr35Zldq038x_N03buKfgHD3Ags1Xyu
 if not OPENAI_API_KEY:
     raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
 
-openai.api_key = OPENAI_API_KEY
+client = openai.OpenAI()
 
 app = FastAPI()
 
@@ -74,7 +74,7 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     - **Final Recommendations**
     """
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
      model="gpt-4",
      messages=[
         {"role": "system", "content": "You are an expert financial auditor."},
@@ -84,7 +84,7 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
      )
 
     # Extract response
-    audit_result = response["choices"][0]["message"]["content"]
+    audit_result = response.choices[0].message.content
     return {"Audit Report": audit_result}
 
 @app.get("/")
