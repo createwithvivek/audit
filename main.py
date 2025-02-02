@@ -1,16 +1,16 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
 import pandas as pd
 import io
 import os
+import requests
 
-# Load OpenAI API key securely (DO NOT HARDCODE)
-OPENAI_API_KEY = "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"
+# Load OpenAI API key securely from environment variables (DO NOT HARDCODE)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
 
-client = OpenAI()
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"  # OpenAI Chat API endpoint
 
 app = FastAPI()
 
@@ -73,22 +73,39 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     - **Final Recommendations**
     """
 
-    # OpenAI GPT-4o-mini API Call
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
+    # Prepare API request
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
             {"role": "system", "content": "You are an expert financial auditor."},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=2000,
-    )
+        "max_tokens": 2000
+    }
+
+    # Send request to OpenAI API
+    try:
+        response = requests.post(OPENAI_API_URL, json=payload, headers=headers)
+        response.raise_for_status()  # Raise an error for bad status codes
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error connecting to OpenAI API: {str(e)}")
 
     # Extract response content
-    audit_result = response.choices[0].message.content
+    try:
+        audit_result = data["choices"][0]["message"]["content"]
+        request_id = data.get("id", "N/A")  # Get request ID if available
+    except (KeyError, IndexError):
+        raise HTTPException(status_code=500, detail="Invalid response from OpenAI API")
 
     return {
         "Audit Report": audit_result,
-        "Request ID": response._request_id  # OpenAI Request ID for tracking
+        "Request ID": request_id  # OpenAI Request ID for tracking
     }
 
 @app.get("/")
