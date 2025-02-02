@@ -6,7 +6,7 @@ import io
 app = FastAPI()
 
 # Set OpenAI API Key
-openai.api_key = "YOUR_OPENAI_API_KEY"
+openai.api_key = "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"
 
 # CORS settings (Add your allowed origins here)
 origins = [
