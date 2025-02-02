@@ -4,9 +4,10 @@ import pandas as pd
 import io
 import os
 import requests
+import base64
 
 # Load OpenAI API key securely from environment variables (DO NOT HARDCODE)
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("⚠️ OpenAI API Key is missing. Set it as an environment variable.")
 
@@ -38,18 +39,19 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
 
-    # Read bill files asynchronously
-    bill_files = {}
+    # Read bill images asynchronously and convert them to Base64
+    bill_images = {}
     for bill in bills:
         bill_contents = await bill.read()
-        bill_files[bill.filename] = bill_contents
+        bill_base64 = base64.b64encode(bill_contents).decode("utf-8")  # Convert to Base64
+        bill_images[bill.filename] = bill_base64
 
     # Format CSV as text for OpenAI
     csv_text = df.to_string()
 
     # Construct GPT-4o-mini prompt
     prompt = f"""
-    You are a financial auditor. Your job is to verify transactions in the audit file against the provided bills.
+    You are a financial auditor. Your job is to verify transactions in the audit file against the provided bill images.
 
     **Instructions:**
     - Verify each transaction in the CSV file with the provided bills.
@@ -62,10 +64,10 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     **Audit Transactions (CSV Data):**
     {csv_text}
 
-    **Bills Received:**
-    {', '.join(bill_files.keys()) if bill_files else "No bills uploaded"}
+    **Bill Images (Base64 Encoded):**
+    {', '.join(bill_images.keys()) if bill_images else "No bills uploaded"}
 
-    Return a structured JSON output with:
+    Analyze the transactions based on the bill images and return a structured JSON output with:
     - **Audit Score (0-100%)**
     - **Transactions with missing or inconsistent bills**
     - **Suspicious or fraudulent bills**
