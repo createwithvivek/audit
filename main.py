@@ -74,13 +74,14 @@ async def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
     - **Final Recommendations**
     """
 
-    # OpenAI Chat Completion (Corrected API Call)
     response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "system", "content": "You are an expert financial auditor."},
-                  {"role": "user", "content": prompt}],
-        max_tokens=2000,
-    )
+     model="gpt-4",
+     messages=[
+        {"role": "system", "content": "You are an expert financial auditor."},
+        {"role": "user", "content": prompt},
+      ],
+     max_tokens=2000,
+     )
 
     # Extract response
     audit_result = response["choices"][0]["message"]["content"]
