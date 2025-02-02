@@ -40,11 +40,11 @@ def audit_expenses_with_gpt4(csv_data: str, image_data: list) -> str:
 
     return response.choices[0].message["content"].strip()
 
-def encode_image_to_base64(image: UploadFile) -> str:
+async def encode_image_to_base64(image: UploadFile) -> str:
     """
     Encodes an uploaded image file to base64.
     """
-    image_bytes = image.file.read()
+    image_bytes = await image.read()
     return base64.b64encode(image_bytes).decode("utf-8")
 
 @app.post("/upload-audit/")
@@ -61,7 +61,10 @@ async def audit_expenses(
 
     for image in bill_images:
         if not image.filename.lower().endswith((".png", ".jpg", ".jpeg")):
-            raise HTTPException(status_code=400, detail="Invalid image format. Only PNG, JPG, and JPEG are allowed.")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid image format. Only PNG, JPG, and JPEG are allowed.",
+            )
 
     # Read the CSV file
     csv_contents = await csv_file.read()
@@ -69,13 +72,15 @@ async def audit_expenses(
     csv_data = df.to_string(index=False)
 
     # Encode images to base64
-    image_data = [encode_image_to_base64(image) for image in bill_images]
+    image_data = []
+    for image in bill_images:
+        image_data.append(await encode_image_to_base64(image))
 
     # Audit the expenses and bills using GPT-4
     audit_result = audit_expenses_with_gpt4(csv_data, image_data)
 
     return {"audit_result": audit_result}
 
-if name == "main":
+if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
