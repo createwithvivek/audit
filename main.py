@@ -3,8 +3,6 @@ import openai
 import pandas as pd
 import io
 import base64
-from PIL import Image
-import requests
 
 app = FastAPI()
 
@@ -46,39 +44,37 @@ async def encode_image_to_base64(image: UploadFile) -> str:
 
 @app.post("/upload-audit/")
 async def audit_expenses(
-    csv_file: UploadFile = File(...),
-    bill_images: list[UploadFile] = File(None)
+    audit_csv: UploadFile = File(...),
+    bills: list[UploadFile] = File([])  # Default to empty list if no images provided
 ):
     """
     Endpoint to upload a CSV file and optionally images of bills for auditing.
     """
     # Validate CSV file
-    if not csv_file.filename.endswith(".csv"):
+    if not audit_csv.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Invalid CSV file format.")
 
-    # Validate image file(s) if provided
-    if bill_images:
-        for image in bill_images:
-            if not image.filename.lower().endswith((".png", ".jpg", ".jpeg")):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid image format. Only PNG, JPG, and JPEG are allowed.",
-                )
+    # Validate image file(s)
+    for image in bills:
+        if not image.filename.lower().endswith((".png", ".jpg", ".jpeg")):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid image format. Only PNG, JPG, and JPEG are allowed."
+            )
 
     # Read and parse the CSV file
-    csv_contents = await csv_file.read()
+    csv_contents = await audit_csv.read()
     try:
         df = pd.read_csv(io.StringIO(csv_contents.decode("utf-8")))
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to parse CSV file.")
     csv_data = df.to_string(index=False)
 
-    # Encode images to base64 if provided
-    image_data: list[str] = []
-    if bill_images:
-        for image in bill_images:
-            encoded = await encode_image_to_base64(image)
-            image_data.append(encoded)
+    # Encode images to base64 (if any)
+    image_data = []
+    for image in bills:
+        encoded = await encode_image_to_base64(image)
+        image_data.append(encoded)
 
     # Audit the expenses and bills using GPT-4
     audit_result = audit_expenses_with_gpt4(csv_data, image_data)
