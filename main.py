@@ -3,33 +3,36 @@ import pandas as pd
 import io
 import base64
 import asyncio
-from openai import OpenAI  # New import style from the latest OpenAI package
+import logging
+from openai import OpenAI  # Using the new import style
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
-# Instantiate the OpenAI client.
-# For production, store your API key securely (e.g., in environment variables).
+# Instantiate the OpenAI client with your API key.
 client = OpenAI(api_key="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")
 
 
 def get_audit_completion(prompt: str) -> dict:
     """
-    Synchronous helper function that calls the new OpenAI API interface.
+    Synchronous helper function that calls the new OpenAI API.
     """
     return client.chat.completions.create(
-        model="gpt-4o",  # Use the new model identifier if needed
+        model="gpt-4",  # Ensure this model is available in your account
         store=True,
         messages=[
             {"role": "system", "content": "You are a financial auditor."},
             {"role": "user", "content": prompt},
-        ]
+        ],
     )
 
 
 async def audit_expenses_with_gpt4(csv_data: str, image_data: list[str]) -> str:
     """
-    Constructs the prompt using the CSV data and image data (base64 encoded)
-    and calls the OpenAI API asynchronously using a thread executor.
+    Constructs the prompt from CSV and image data, then calls the OpenAI API.
+    Runs the synchronous API call in a thread using asyncio.to_thread.
     """
     prompt = (
         "You are a financial auditor. Below is a CSV file containing financing expenses and bills, "
@@ -41,19 +44,26 @@ async def audit_expenses_with_gpt4(csv_data: str, image_data: list[str]) -> str:
     for idx, img_base64 in enumerate(image_data):
         prompt += f"Image {idx + 1}: {img_base64[:100]}... (truncated)\n"
 
-    # Run the synchronous API call in a thread to avoid blocking the event loop.
-    loop = asyncio.get_running_loop()
     try:
-        response = await loop.run_in_executor(None, lambda: get_audit_completion(prompt))
+        # Run the synchronous API call in a separate thread.
+        response = await asyncio.to_thread(get_audit_completion, prompt)
     except Exception as e:
+        logging.error("Error during OpenAI API call: %s", e)
         raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
 
-    return response["choices"][0]["message"]["content"].strip()
+    logging.info("OpenAI API response: %s", response)
+
+    try:
+        # Adjust the extraction based on the new API response structure.
+        return response["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        logging.error("Error parsing OpenAI API response: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to parse OpenAI API response.")
 
 
 async def encode_image_to_base64(image: UploadFile) -> str:
     """
-    Asynchronously reads an image and encodes it to a base64 string.
+    Asynchronously reads an image file and encodes it to a base64 string.
     """
     image_bytes = await image.read()
     return base64.b64encode(image_bytes).decode("utf-8")
@@ -62,19 +72,19 @@ async def encode_image_to_base64(image: UploadFile) -> str:
 @app.post("/upload-audit/")
 async def audit_expenses(
     audit_csv: UploadFile = File(...),
-    bills: list[UploadFile] = File([])  # Defaults to empty list if no images provided
+    bills: list[UploadFile] = File([])  # Defaults to an empty list if no images are provided
 ):
     """
-    Endpoint to upload a CSV file and optionally images (bills) for auditing.
+    Endpoint to upload a CSV file and optionally image files (bills) for auditing.
     Field names:
       - audit_csv: CSV file
       - bills: image file(s)
     """
-    # Validate CSV file
+    # Validate CSV file format
     if not audit_csv.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Invalid CSV file format.")
 
-    # Validate image file(s)
+    # Validate image file formats
     for image in bills:
         if not image.filename.lower().endswith((".png", ".jpg", ".jpeg")):
             raise HTTPException(
@@ -82,11 +92,12 @@ async def audit_expenses(
                 detail="Invalid image format. Only PNG, JPG, and JPEG are allowed."
             )
 
-    # Read and parse the CSV file
+    # Read and parse CSV file
     csv_contents = await audit_csv.read()
     try:
         df = pd.read_csv(io.StringIO(csv_contents.decode("utf-8")))
-    except Exception:
+    except Exception as e:
+        logging.error("Error parsing CSV file: %s", e)
         raise HTTPException(status_code=400, detail="Failed to parse CSV file.")
     csv_data = df.to_string(index=False)
 
@@ -96,7 +107,7 @@ async def audit_expenses(
         encoded = await encode_image_to_base64(image)
         image_data.append(encoded)
 
-    # Audit the expenses using GPT-4 with the new API interface.
+    # Call the OpenAI API via our helper
     audit_result = await audit_expenses_with_gpt4(csv_data, image_data)
 
     return {"audit_result": audit_result}
