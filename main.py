@@ -1,11 +1,28 @@
-from fastapi import FastAPI, File, UploadFile # type: ignore
-import openai # type: ignore
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+import openai
 import io
 
 app = FastAPI()
 
 # Set OpenAI API Key
-openai.api_key = "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"
+openai.api_key = "YOUR_OPENAI_API_KEY"
+
+# CORS settings (Add your allowed origins here)
+origins = [
+    "https://da93a30c-86aa-42bd-af64-68a8b5ce16e5.lovableproject.c",  # Frontend URL
+    "http://localhost",  # For local development
+    "http://127.0.0.1:8000",  # Localhost address for FastAPI server
+]
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allow requests from these origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
 
 # Function to analyze audit with ChatGPT
 def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
@@ -47,7 +64,7 @@ def analyze_audit(audit_csv: UploadFile, bills: list[UploadFile]):
 
     # Send request to OpenAI ChatGPT API
     response = openai.ChatCompletion.create(
-        model="gpt-4-vision-preview",
+        model="gpt-4-vision-preview",  # Use the appropriate model
         messages=[{"role": "system", "content": prompt}],
         files=list(files.values()),  # Attach files
     )
@@ -61,4 +78,4 @@ async def home():
 @app.post("/upload-audit/")
 async def upload_audit(audit_csv: UploadFile = File(...), bills: list[UploadFile] = File(...)):
     result = analyze_audit(audit_csv, bills)
-    return result
+    return {"message": "Audit Completed", "ChatGPT Report": result}
